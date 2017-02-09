@@ -12,6 +12,3 @@ export * from './SphereModule';
 export * from './SoftbodyModule';
 export * from './ClothModule';
 export * from './RopeModule';
-
-// controls
-export * from './controls/FirstPersonModule';

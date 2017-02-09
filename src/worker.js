@@ -1,3 +1,5 @@
+import * as OIMO from 'oimo';
+
 const transferableMessage = self.webkitPostMessage || self.postMessage,
 
   // enum
@@ -82,10 +84,9 @@ const setShapeCache = (cache_key, shape) => {
   _object_shapes[cache_key] = shape;
 };
 
-const createShape = (description) => {
+const createShape = (config, description) => {
   let shape;
 
-  _transform.setIdentity();
   switch (description.type) {
     case 'compound': {
       shape = new Ammo.btCompoundShape();
@@ -93,26 +94,20 @@ const createShape = (description) => {
       break;
     }
     case 'plane': {
-      const cache_key = `plane_${description.normal.x}_${description.normal.y}_${description.normal.z}`;
+      const cache_key = `plane_${description.width}_${description.height}_${description.depth}`;
 
       if ((shape = getShapeFromCache(cache_key)) === null) {
-        _vec3_1.setX(description.normal.x);
-        _vec3_1.setY(description.normal.y);
-        _vec3_1.setZ(description.normal.z);
-        shape = new Ammo.btStaticPlaneShape(_vec3_1, 0);
+        shape = new OIMO.Plane(config);
         setShapeCache(cache_key, shape);
       }
 
       break;
     }
     case 'box': {
-      const cache_key = `box_${description.width}_${description.height}_${description.depth}`;
+      const cache_key = `plane_${description.width}_${description.height}_${description.depth}`;
 
       if ((shape = getShapeFromCache(cache_key)) === null) {
-        _vec3_1.setX(description.width / 2);
-        _vec3_1.setY(description.height / 2);
-        _vec3_1.setZ(description.depth / 2);
-        shape = new Ammo.btBoxShape(_vec3_1);
+        shape = new OIMO.Box(config, description.width, description.height, description.depth);
         setShapeCache(cache_key, shape);
       }
 
@@ -122,7 +117,7 @@ const createShape = (description) => {
       const cache_key = `sphere_${description.radius}`;
 
       if ((shape = getShapeFromCache(cache_key)) === null) {
-        shape = new Ammo.btSphereShape(description.radius);
+        shape = new OIMO.Sphere(config, description.radius);
         setShapeCache(cache_key, shape);
       }
 
@@ -252,63 +247,6 @@ const createShape = (description) => {
   return shape;
 };
 
-const createSoftBody = (description) => {
-  let body;
-
-  const softBodyHelpers = new Ammo.btSoftBodyHelpers();
-
-  switch (description.type) {
-    case 'softTrimesh': {
-      if (!description.aVertices.length) return false;
-
-      body = softBodyHelpers.CreateFromTriMesh(
-        world.getWorldInfo(),
-        description.aVertices,
-        description.aIndices,
-        description.aIndices.length / 3,
-        false
-      );
-
-      break;
-    }
-    case 'softClothMesh': {
-      const cr = description.corners;
-
-      body = softBodyHelpers.CreatePatch(
-        world.getWorldInfo(),
-        new Ammo.btVector3(cr[0], cr[1], cr[2]),
-        new Ammo.btVector3(cr[3], cr[4], cr[5]),
-        new Ammo.btVector3(cr[6], cr[7], cr[8]),
-        new Ammo.btVector3(cr[9], cr[10], cr[11]),
-        description.segments[0],
-        description.segments[1],
-        0,
-        true
-      );
-
-      break;
-    }
-    case 'softRopeMesh': {
-      const data = description.data;
-
-      body = softBodyHelpers.CreateRope(
-        world.getWorldInfo(),
-        new Ammo.btVector3(data[0], data[1], data[2]),
-        new Ammo.btVector3(data[3], data[4], data[5]),
-        data[6] - 1,
-        0
-      );
-
-      break;
-    }
-    default:
-      // Not recognized
-      return;
-  }
-
-  return body;
-};
-
 public_functions.init = (params = {}) => {
   if (params.wasmBuffer) {
     importScripts(params.ammo);
@@ -324,13 +262,6 @@ public_functions.init = (params = {}) => {
 }
 
 public_functions.makeWorld = (params = {}) => {
-  _transform = new Ammo.btTransform();
-  _transform_pos = new Ammo.btTransform();
-  _vec3_1 = new Ammo.btVector3(0, 0, 0);
-  _vec3_2 = new Ammo.btVector3(0, 0, 0);
-  _vec3_3 = new Ammo.btVector3(0, 0, 0);
-  _quat = new Ammo.btQuaternion(0, 0, 0, 0);
-
   REPORT_CHUNKSIZE = params.reportsize || 50;
 
   if (SUPPORT_TRANSFERABLE) {
@@ -352,60 +283,15 @@ public_functions.makeWorld = (params = {}) => {
   vehiclereport[0] = MESSAGE_TYPES.VEHICLEREPORT;
   constraintreport[0] = MESSAGE_TYPES.CONSTRAINTREPORT;
 
-  const collisionConfiguration = params.softbody
-    ? new Ammo.btSoftBodyRigidBodyCollisionConfiguration()
-    : new Ammo.btDefaultCollisionConfiguration(),
-    dispatcher = new Ammo.btCollisionDispatcher(collisionConfiguration),
-    solver = new Ammo.btSequentialImpulseConstraintSolver();
-
-  let broadphase;
-
-  if (!params.broadphase) params.broadphase = {type: 'dynamic'};
-  // TODO!!!
-  /* if (params.broadphase.type === 'sweepprune') {
-    extend(params.broadphase, {
-      aabbmin: {
-        x: -50,
-        y: -50,
-        z: -50
-      },
-
-      aabbmax: {
-        x: 50,
-        y: 50,
-        z: 50
-      },
-    });
-  }*/
-
-  switch (params.broadphase.type) {
-    case 'sweepprune':
-      _vec3_1.setX(params.broadphase.aabbmin.x);
-      _vec3_1.setY(params.broadphase.aabbmin.y);
-      _vec3_1.setZ(params.broadphase.aabbmin.z);
-
-      _vec3_2.setX(params.broadphase.aabbmax.x);
-      _vec3_2.setY(params.broadphase.aabbmax.y);
-      _vec3_2.setZ(params.broadphase.aabbmax.z);
-
-      broadphase = new Ammo.btAxisSweep3(
-        _vec3_1,
-        _vec3_2
-      );
-
-      break;
-    case 'dynamic':
-    default:
-      broadphase = new Ammo.btDbvtBroadphase();
-      break;
-  }
-
-  world = params.softbody
-    ? new Ammo.btSoftRigidDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration, new Ammo.btDefaultSoftBodySolver())
-    : new Ammo.btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collisionConfiguration);
-  fixedTimeStep = params.fixedTimeStep;
-
-  if (params.softbody) _softbody_enabled = true;
+  world = new OIMO.World({
+    timestep: 1/60,
+    iterations: 8,
+    broadphase: 2, // 1 brute force, 2 sweep and prune, 3 volume tree
+    worldscale: 1, // scale full world
+    random: true,  // randomize sample
+    info: false,   // calculate statistic or not
+    gravity: [0,-9.8,0]
+  });
 
   transferableMessage({cmd: 'worldReady'});
 };
@@ -415,10 +301,7 @@ public_functions.setFixedTimeStep = (description) => {
 };
 
 public_functions.setGravity = (description) => {
-  _vec3_1.setX(description.x);
-  _vec3_1.setY(description.y);
-  _vec3_1.setZ(description.z);
-  world.setGravity(_vec3_1);
+  world.gravity.set(description.x, description.y, description.z);
 };
 
 public_functions.appendAnchor = (description) => {
@@ -432,152 +315,38 @@ public_functions.appendAnchor = (description) => {
 }
 
 public_functions.addObject = (description) => {
-  let body, motionState;
+  const BODY_DYNAMIC = 1;
+  const BODY_STATIC = 2;
 
-  if (description.type.indexOf('soft') !== -1) {
-    body = createSoftBody(description);
+  const config = new OIMO.ShapeConfig();
+  config.density = 1; // description.mass === 0 ? 1 : description.mass
+  config.friction = description.friction;
+  config.restitution = description.restitution;
 
-    const sbConfig = body.get_m_cfg();
+  const shape = createShape(config, description);
 
-    if (description.viterations) sbConfig.set_viterations(description.viterations);
-    if (description.piterations) sbConfig.set_piterations(description.piterations);
-    if (description.diterations) sbConfig.set_diterations(description.diterations);
-    if (description.citerations) sbConfig.set_citerations(description.citerations);
-    sbConfig.set_collisions(0x11);
-    sbConfig.set_kDF(description.friction);
-    sbConfig.set_kDP(description.damping);
-    if (description.pressure) sbConfig.set_kPR(description.pressure);
-    if (description.drag) sbConfig.set_kDG(description.drag);
-    if (description.lift) sbConfig.set_kLF(description.lift);
-    if (description.anchorHardness) sbConfig.set_kAHR(description.anchorHardness);
-    if (description.rigidHardness) sbConfig.set_kCHR(description.rigidHardness);
+  const body = new OIMO.RigidBody(
+    new OIMO.Vec3().copy(description.position),
+    new OIMO.Quat().copy(description.rotation),
+    new OIMO.Vec3().copy(description.scale),
+    1
+  );
 
-    if (description.klst) body.get_m_materials().at(0).set_m_kLST(description.klst);
-    if (description.kast) body.get_m_materials().at(0).set_m_kAST(description.kast);
-    if (description.kvst) body.get_m_materials().at(0).set_m_kVST(description.kvst);
-
-    Ammo.castObject(body, Ammo.btCollisionObject).getCollisionShape().setMargin(description.margin ? description.margin : 0.1);
-
-    // Ammo.castObject(body, Ammo.btCollisionObject).getCollisionShape().setLocalScaling(_vec3_1);
-    body.setActivationState(description.state || 4);
-    body.type = 0; // SoftBody.
-    if (description.type === 'softRopeMesh') body.rope = true;
-    if (description.type === 'softClothMesh') body.cloth = true;
-
-    _transform.setIdentity();
-
-    _vec3_1.setX(description.position.x);
-    _vec3_1.setY(description.position.y);
-    _vec3_1.setZ(description.position.z);
-    _transform.setOrigin(_vec3_1);
-
-    _quat.setX(description.rotation.x);
-    _quat.setY(description.rotation.y);
-    _quat.setZ(description.rotation.z);
-    _quat.setW(description.rotation.w);
-    _transform.setRotation(_quat);
-
-    body.transform(_transform);
-
-    _vec3_1.setX(description.scale.x);
-    _vec3_1.setY(description.scale.y);
-    _vec3_1.setZ(description.scale.z);
-
-    body.scale(_vec3_1);
-
-    body.setTotalMass(description.mass, false);
-    world.addSoftBody(body, 1, -1);
-    if (description.type === 'softTrimesh') _softbody_report_size += body.get_m_faces().size() * 3;
-    else if (description.type === 'softRopeMesh') _softbody_report_size += body.get_m_nodes().size();
-    else _softbody_report_size += body.get_m_nodes().size() * 3;
-
-    _num_softbody_objects++;
-  } else {
-    let shape = createShape(description);
-
-    if (!shape) return;
-
-    // If there are children then this is a compound shape
-    if (description.children) {
-      const compound_shape = new Ammo.btCompoundShape();
-      compound_shape.addChildShape(_transform, shape);
-
-      for (let i = 0; i < description.children.length; i++) {
-        const _child = description.children[i];
-
-        const trans = new Ammo.btTransform();
-        trans.setIdentity();
-
-        _vec3_1.setX(_child.position_offset.x);
-        _vec3_1.setY(_child.position_offset.y);
-        _vec3_1.setZ(_child.position_offset.z);
-        trans.setOrigin(_vec3_1);
-
-        _quat.setX(_child.rotation.x);
-        _quat.setY(_child.rotation.y);
-        _quat.setZ(_child.rotation.z);
-        _quat.setW(_child.rotation.w);
-        trans.setRotation(_quat);
-
-        shape = createShape(description.children[i]);
-        compound_shape.addChildShape(trans, shape);
-        Ammo.destroy(trans);
-      }
-
-      shape = compound_shape;
-      _compound_shapes[description.id] = shape;
-    }
-
-    _vec3_1.setX(description.scale.x);
-    _vec3_1.setY(description.scale.y);
-    _vec3_1.setZ(description.scale.z);
-
-    shape.setLocalScaling(_vec3_1);
-    shape.setMargin(description.margin ? description.margin : 0);
-
-    _vec3_1.setX(0);
-    _vec3_1.setY(0);
-    _vec3_1.setZ(0);
-    shape.calculateLocalInertia(description.mass, _vec3_1);
-
-    _transform.setIdentity();
-
-    _vec3_2.setX(description.position.x);
-    _vec3_2.setY(description.position.y);
-    _vec3_2.setZ(description.position.z);
-    _transform.setOrigin(_vec3_2);
-
-    _quat.setX(description.rotation.x);
-    _quat.setY(description.rotation.y);
-    _quat.setZ(description.rotation.z);
-    _quat.setW(description.rotation.w);
-    _transform.setRotation(_quat);
-
-    motionState = new Ammo.btDefaultMotionState(_transform); // #TODO: btDefaultMotionState supports center of mass offset as second argument - implement
-    const rbInfo = new Ammo.btRigidBodyConstructionInfo(description.mass, motionState, shape, _vec3_1);
-
-    rbInfo.set_m_friction(description.friction);
-    rbInfo.set_m_restitution(description.restitution);
-    rbInfo.set_m_linearDamping(description.damping);
-    rbInfo.set_m_angularDamping(description.damping);
-
-    body = new Ammo.btRigidBody(rbInfo);
-    body.setActivationState(description.state || 4);
-    Ammo.destroy(rbInfo);
-
-    if (typeof description.collision_flags !== 'undefined') body.setCollisionFlags(description.collision_flags);
-
-    if (description.group && description.mask) world.addRigidBody(body, description.group, description.mask);
-    else world.addRigidBody(body);
-    body.type = 1; // RigidBody.
-    _num_rigidbody_objects++;
+  body.addShape(shape);
+  if (description.mass === 0) body.setupMass(BODY_STATIC);
+  else {
+    body.setupMass(BODY_DYNAMIC, true);
+    body.awake();
   }
 
-  body.activate();
+  world.addRigidBody(body);
+
+  body.type = 1; // RigidBody.
+  _num_rigidbody_objects++;
 
   body.id = description.id;
+  body.name = body.id;
   _objects[body.id] = body;
-  _motion_states[body.id] = motionState;
 
   _objects_ammo[body.a === undefined ? body.ptr : body.a] = body.id;
   _num_objects++;
@@ -1125,18 +894,12 @@ public_functions.constraint_setBreakingImpulseThreshold = (details) => {
 
 public_functions.simulate = (params = {}) => {
   if (world) {
-    if (params.timeStep && params.timeStep < fixedTimeStep)
-      params.timeStep = fixedTimeStep;
+    world.step();
 
-    params.maxSubSteps = params.maxSubSteps || Math.ceil(params.timeStep / fixedTimeStep); // If maxSubSteps is not defined, keep the simulation fully up to date
-
-    world.stepSimulation(params.timeStep, params.maxSubSteps, fixedTimeStep);
-
-    if (_vehicles.length > 0) reportVehicles();
-    reportCollisions();
-    if (_constraints.length > 0) reportConstraints();
+    // if (_vehicles.length > 0) reportVehicles();
+    // reportCollisions();
+    // if (_constraints.length > 0) reportConstraints();
     reportWorld();
-    if (_softbody_enabled) reportWorld_softbodies();
   }
 };
 
@@ -1352,33 +1115,32 @@ const reportWorld = () => {
         // object.getMotionState().getWorldTransform( transform );
         // object.getMotionState().getWorldTransform(_transform);
 
-        const transform = object.getCenterOfMassTransform();
-        const origin = transform.getOrigin();
-        const rotation = transform.getRotation();
+        const position = object.getPosition();
+        const rotation = object.getQuaternion();
 
         // add values to report
         const offset = 2 + (i++) * WORLDREPORT_ITEMSIZE;
 
         worldreport[offset] = object.id;
 
-        worldreport[offset + 1] = origin.x();
-        worldreport[offset + 2] = origin.y();
-        worldreport[offset + 3] = origin.z();
+        worldreport[offset + 1] = position.x;
+        worldreport[offset + 2] = position.y;
+        worldreport[offset + 3] = position.z;
 
-        worldreport[offset + 4] = rotation.x();
-        worldreport[offset + 5] = rotation.y();
-        worldreport[offset + 6] = rotation.z();
-        worldreport[offset + 7] = rotation.w();
+        worldreport[offset + 4] = rotation.x;
+        worldreport[offset + 5] = rotation.y;
+        worldreport[offset + 6] = rotation.z;
+        worldreport[offset + 7] = rotation.w;
 
-        _vector = object.getLinearVelocity();
-        worldreport[offset + 8] = _vector.x();
-        worldreport[offset + 9] = _vector.y();
-        worldreport[offset + 10] = _vector.z();
+        _vector = object.linearVelocity;
+        worldreport[offset + 8] = _vector.x;
+        worldreport[offset + 9] = _vector.y;
+        worldreport[offset + 10] = _vector.z;
 
-        _vector = object.getAngularVelocity();
-        worldreport[offset + 11] = _vector.x();
-        worldreport[offset + 12] = _vector.y();
-        worldreport[offset + 13] = _vector.z();
+        _vector = object.angularVelocity;
+        worldreport[offset + 11] = _vector.x;
+        worldreport[offset + 12] = _vector.y;
+        worldreport[offset + 13] = _vector.z;
       }
     }
   }
