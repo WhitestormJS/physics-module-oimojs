@@ -41,7 +41,7 @@ export default {
         test: /\.js$/,
         exclude: [
           /node_modules/,
-          /ammo\.js/
+          /Oimo\.js/
         ],
         loader: 'babel-loader',
         query: {

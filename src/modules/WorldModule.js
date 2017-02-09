@@ -32,7 +32,7 @@ export class WorldModule extends Eventable {
       rateLimit: true,
       ammo: "",
       softbody: false,
-      gravity: new Vector3(0, -100, 0)
+      gravity: new Vector3(0, -9.8 * 10, 0)
     }, params);
 
     const start = performance.now();
@@ -43,20 +43,8 @@ export class WorldModule extends Eventable {
     this.isLoaded = false;
 
     this.loader = new Promise((resolve, reject) => {
-      if (params.wasm) {
-        fetch(params.wasm)
-          .then(response => response.arrayBuffer())
-          .then(buffer => {
-            this.params.wasmBuffer = buffer;
-
-            this.execute('init', this.params);
-            // console.log("Physics loading time: " + (performance.now() - start) + "ms");
-            resolve();
-          });
-      } else {
-        this.execute('init', this.params);
-        resolve();
-      }
+      this.execute('init', this.params);
+      resolve();
     });
 
     this.loader.then(() => {this.isLoaded = true});

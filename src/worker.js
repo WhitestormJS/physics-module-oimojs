@@ -104,12 +104,12 @@ const createShape = (config, description) => {
       break;
     }
     case 'box': {
-      const cache_key = `plane_${description.width}_${description.height}_${description.depth}`;
-
-      if ((shape = getShapeFromCache(cache_key)) === null) {
+      // const cache_key = `box_${description.width}_${description.height}_${description.depth}`;
+      //
+      // if ((shape = getShapeFromCache(cache_key)) === null) {
         shape = new OIMO.Box(config, description.width, description.height, description.depth);
-        setShapeCache(cache_key, shape);
-      }
+      //   setShapeCache(cache_key, shape);
+      // }
 
       break;
     }
@@ -333,15 +333,17 @@ public_functions.addObject = (description) => {
   );
 
   body.addShape(shape);
-  if (description.mass === 0) body.setupMass(BODY_STATIC);
-  else {
+  if (description.mass === 0) {
+    body.setupMass(BODY_STATIC, true);
+    body.sleep();
+  } else {
     body.setupMass(BODY_DYNAMIC, true);
     body.awake();
   }
 
   world.addRigidBody(body);
 
-  body.type = 1; // RigidBody.
+  // body.type = 1; // RigidBody.
   _num_rigidbody_objects++;
 
   body.id = description.id;
@@ -436,15 +438,9 @@ public_functions.applyEngineForce = (details) => {
 };
 
 public_functions.removeObject = (details) => {
-  if (_objects[details.id].type === 0) {
-    _num_softbody_objects--;
-    _softbody_report_size -= _objects[details.id].get_m_nodes().size();
-    world.removeSoftBody(_objects[details.id]);
-  } else if (_objects[details.id].type === 1) {
-    _num_rigidbody_objects--;
-    world.removeRigidBody(_objects[details.id]);
-    Ammo.destroy(_motion_states[details.id]);
-  }
+  _num_rigidbody_objects--;
+  world.removeRigidBody(_objects[details.id]);
+  Ammo.destroy(_motion_states[details.id]);
 
   Ammo.destroy(_objects[details.id]);
   if (_compound_shapes[details.id]) Ammo.destroy(_compound_shapes[details.id]);
@@ -462,46 +458,8 @@ public_functions.removeObject = (details) => {
 public_functions.updateTransform = (details) => {
   _object = _objects[details.id];
 
-  if (_object.type === 1) {
-    _object.getMotionState().getWorldTransform(_transform);
-
-    if (details.pos) {
-      _vec3_1.setX(details.pos.x);
-      _vec3_1.setY(details.pos.y);
-      _vec3_1.setZ(details.pos.z);
-      _transform.setOrigin(_vec3_1);
-    }
-
-    if (details.quat) {
-      _quat.setX(details.quat.x);
-      _quat.setY(details.quat.y);
-      _quat.setZ(details.quat.z);
-      _quat.setW(details.quat.w);
-      _transform.setRotation(_quat);
-    }
-
-    _object.setWorldTransform(_transform);
-    _object.activate();
-  } else if (_object.type === 0) {
-    // _object.getWorldTransform(_transform);
-
-    if (details.pos) {
-      _vec3_1.setX(details.pos.x);
-      _vec3_1.setY(details.pos.y);
-      _vec3_1.setZ(details.pos.z);
-      _transform.setOrigin(_vec3_1);
-    }
-
-    if (details.quat) {
-      _quat.setX(details.quat.x);
-      _quat.setY(details.quat.y);
-      _quat.setZ(details.quat.z);
-      _quat.setW(details.quat.w);
-      _transform.setRotation(_quat);
-    }
-
-    _object.transform(_transform);
-  }
+  if (details.pos) _object.setPosition(details.pos);
+  if (details.quat) _object.setQuaternion(details.quat);
 };
 
 public_functions.updateMass = (details) => {
@@ -597,14 +555,7 @@ public_functions.setAngularVelocity = (details) => {
 };
 
 public_functions.setLinearVelocity = (details) => {
-  _vec3_1.setX(details.x);
-  _vec3_1.setY(details.y);
-  _vec3_1.setZ(details.z);
-
-  _objects[details.id].setLinearVelocity(
-    _vec3_1
-  );
-  _objects[details.id].activate();
+  _objects[details.id].linearVelocity.copy(details);
 };
 
 public_functions.setAngularFactor = (details) => {
@@ -1109,7 +1060,7 @@ const reportWorld = () => {
     while (index--) {
       const object = _objects[index];
 
-      if (object && object.type === 1) { // RigidBodies.
+      if (object) { // RigidBodies.
         // #TODO: we can't use center of mass transform when center of mass can change,
         //        but getMotionState().getWorldTransform() screws up on objects that have been moved
         // object.getMotionState().getWorldTransform( transform );
